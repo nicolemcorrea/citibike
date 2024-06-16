@@ -1,0 +1,179 @@
+#Consulta para identificar nulos 
+
+SELECT
+  COUNTIF(tripduration IS NULL) AS tripduration,
+  COUNTIF(starttime IS NULL) AS starttime,
+  COUNTIF(stoptime IS NULL) AS stoptime,
+  COUNTIF(start_station_id IS NULL) AS start_station_id,
+  COUNTIF(start_station_name IS NULL) AS start_station_name,
+  COUNTIF(start_station_latitude IS NULL) AS start_station_latitude,
+  COUNTIF(start_station_longitude IS NULL) AS start_station_longitude,
+  COUNTIF(end_station_id IS NULL) AS end_station_id,
+  COUNTIF(end_station_name IS NULL) AS end_station_name,
+  COUNTIF(end_station_latitude IS NULL) AS end_station_latitude,
+  COUNTIF(end_station_longitude IS NULL) AS end_station_longitude,
+  COUNTIF(bikeid IS NULL) AS bikeid,
+  COUNTIF(usertype IS NULL) AS usertype,
+  COUNTIF(birth_year IS NULL) AS birth_year,
+  COUNTIF(gender IS NULL) AS gender,
+  COUNTIF(customer_plan IS NULL) AS customer_plan,
+FROM
+  `bigquery-public-data.new_york_citibike.citibike_trips`;
+
+# Consulta para identificar dados duplicados
+
+SELECT
+  tripduration,
+  starttime,
+  stoptime,
+  start_station_id,
+  start_station_name,
+  start_station_latitude,
+  start_station_longitude,
+  end_station_id,
+  end_station_name,
+  end_station_latitude,
+  end_station_longitude,
+  bikeid,
+  usertype,
+  birth_year,
+  gender,
+  customer_plan,
+  COUNT(*) AS duplicados
+FROM
+  `bigquery-public-data.new_york_citibike.citibike_trips`
+GROUP BY
+  tripduration,
+  starttime,
+  stoptime,
+  start_station_id,
+  start_station_name,
+  start_station_latitude,
+  start_station_longitude,
+  end_station_id,
+  end_station_name,
+  end_station_latitude,
+  end_station_longitude,
+  bikeid,
+  usertype,
+  birth_year,
+  gender,
+  customer_plan
+HAVING
+  COUNT(*) > 1;
+
+# Consulta para tratar os dados de tripduration e transformá-los para minutos (estão em seg), ajustar a data em starttime e stoptime (separar em data e hs), e criar a variável idade com base na variável birth_year e o ano atual (2024)
+
+SELECT
+tripduration/60 AS tripduration_minutos,
+FORMAT_DATETIME('%F', starttime) AS start_date,
+FORMAT_DATETIME('%T', starttime) AS start_time,
+FORMAT_DATETIME('%F', stoptime) AS stop_date,
+FORMAT_DATETIME('%T', stoptime) AS stop_time,
+start_station_id,
+start_station_name,
+start_station_latitude,
+start_station_longitude,
+end_station_id,
+end_station_name,
+end_station_latitude,
+end_station_longitude,
+bikeid,
+usertype,
+birth_year,
+2024-birth_year AS idade,
+gender,
+customer_plan
+FROM `bigquery-public-data.new_york_citibike.citibike_trips` 
+WHERE (birth_year IS NULL OR birth_year IS NOT NULL) AND tripduration IS NOT NULL 
+
+#Criando uma variável de categoria de idade
+
+SELECT 
+  *,
+  CASE
+    WHEN idade >= 18 AND idade <= 30 THEN 'Idade 18-30'
+    WHEN idade >= 31 AND idade <= 45 THEN 'Idade 31-45'
+    WHEN idade >= 46 AND idade <= 60 THEN 'Idade 46-60'
+    WHEN idade >= 61 AND idade <= 75 THEN 'Idade 61-75'
+    WHEN idade >= 76 AND idade <= 90 THEN 'Idade 76-90'
+    ELSE '> 90'
+  END AS categoria_idade
+FROM 
+  `projeto-citybike.citi_bike_trips.citibike_tratada`
+WHERE 
+  idade <= 90
+
+# Consulta para criação da variável ano_registro
+
+CREATE OR REPLACE TABLE `citi_bike_trips.citibike_final` AS (
+SELECT
+  *,
+  EXTRACT(YEAR FROM start_date) AS ano_registro,
+FROM
+  `citi_bike_trips.citibike_final`
+)
+
+# Consulta para verificar a media de viagens por dia
+
+SELECT
+  data,
+  AVG(num_viagens) AS media_viagens_dia,
+FROM (
+  SELECT
+    DATE(start_date) AS data,
+    COUNT(bikeid) AS num_viagens
+  FROM
+    `citi_bike_trips.citibike_final`
+  GROUP BY
+    data
+)
+GROUP BY
+  data;
+
+# Consulta de viagens por usuario
+
+SELECT
+  usertype,
+  gender,
+  ROUND(AVG(tripduration_minutos), 2) AS med_duracao,
+  COUNT(*) AS total_viagens,
+  ROUND(AVG(EXTRACT(YEAR FROM CURRENT_DATE()) - birth_year), 2) AS med_idad
+FROM
+  `citi_bike_trips.citibike_final`
+WHERE
+  usertype IS NOT NULL
+  AND gender IS NOT NULL
+  AND birth_year IS NOT NULL
+GROUP BY
+  usertype, gender
+ORDER BY
+  usertype, gender;
+
+#Consulta para estatisticas de duração das viagens
+
+WITH duracao_viagem AS (
+  SELECT
+    DATE(start_date) AS data,
+    COUNT(*) AS num_viagens,
+    MAX(tripduration_minutos) AS max_duracao,
+    MIN(tripduration_minutos) AS min_duracao,
+    AVG(tripduration_minutos) AS media_duracao,
+    STDDEV(tripduration_minutos) AS desvpad_duracao
+  FROM
+    `citi_bike_trips.citibike_final`
+  GROUP BY
+    data
+)
+
+SELECT
+  MAX(max_duracao) AS max_duracao,
+  MIN(min_duracao) AS min_duracao,
+  AVG(media_duracao) AS media_duracao,
+  STDDEV(desvpad_duracao) AS desvpad_duracao
+FROM
+  duracao_viagem;
+
+
+
+  
